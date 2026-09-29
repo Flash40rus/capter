@@ -24,27 +24,22 @@
     pointer-events:none; z-index:10; gap:10px;
   }
   #avatar {
-    width:44px; height:44px; border-radius:50%;
-    object-fit:cover; border:2px solid #ffb37a;
-    box-shadow:0 2px 8px rgba(0,0,0,.5); background:#000;
+    width:52px; height:52px;
+    border-radius:50%;
+    border:2px solid #ffb37a;
+    box-shadow:0 2px 8px rgba(0,0,0,.5);
+    background:#3a2a45;
+    display:block;
   }
   #lives { letter-spacing:1px; font-size:15px; }
   #lives .lost { opacity:.2; }
   #score { font-variant-numeric:tabular-nums; }
-  #loader {
-    position:fixed; inset:0;
-    display:flex; align-items:center; justify-content:center;
-    background:#2a1f3d; color:#ffb37a;
-    font-weight:800; font-size:18px; z-index:100;
-    transition:opacity .3s;
-  }
 </style>
 </head>
 <body>
-<div id="loader">Загрузка Каптера…</div>
 <canvas id="game"></canvas>
 <div id="hud">
-  <img id="avatar" src="cat.PNG" alt="Каптер">
+  <canvas id="avatar" width="104" height="104"></canvas>
   <div id="lives"></div>
   <div id="score">0</div>
 </div>
@@ -53,23 +48,19 @@
 'use strict';
 
 // ═══════════════════════════════════════════
-//  ЗАГРУЗКА ФОТО
+//  ПАЛИТРА КОТА (подобрана под твоё фото)
 // ═══════════════════════════════════════════
-const catImg = new Image();
-let imgReady = false;
-
-catImg.onload = () => {
-  imgReady = true;
-  const l = document.getElementById('loader');
-  l.style.opacity = '0';
-  setTimeout(() => l.style.display = 'none', 320);
+const C = {
+  FUR:       '#94876b',  // основной серо-коричневый мех
+  FUR_DARK:  '#4f4534',  // тёмные полоски
+  FUR_LIGHT: '#aaa08a',  // светлые участки
+  WHITE:     '#faf5eb',  // грудка, носочки, морда
+  PINK:      '#e08a8a',  // нос
+  EAR_PINK:  '#e8a5a5',  // внутренние уши
+  EYE:       '#c8d15a',  // жёлто-зелёная радужка
+  EYE_DARK:  '#1a1a12',  // зрачок
+  CLAW:      '#3a3226',  // коготки
 };
-catImg.onerror = () => {
-  const l = document.getElementById('loader');
-  l.textContent = 'cat.PNG не найден';
-  setTimeout(() => l.style.display = 'none', 1200);
-};
-catImg.src = 'cat.PNG';
 
 // ═══════════════════════════════════════════
 //  CANVAS
@@ -94,26 +85,10 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 resize();
 
 // ═══════════════════════════════════════════
-//  РИГ АНИМАЦИИ
-//  Подстрой эти числа, если моргает/хвост не там, где надо
-// ═══════════════════════════════════════════
-const RIG = {
-  // Глаза (доли от ширины/высоты спрайта)
-  eyeL:      { x: 0.38, y: 0.34, r: 0.055 },
-  eyeR:      { x: 0.60, y: 0.34, r: 0.055 },
-  // Корень хвоста (доли)
-  tailRoot:  { x: 0.16, y: 0.72 },
-  // Цвет век — пипеткой с фото вокруг глаз
-  furColor:  '#857353',
-  // Цвет лапок
-  pawColor:  '#f4ede0',
-};
-
-// ═══════════════════════════════════════════
 //  КОНСТАНТЫ
 // ═══════════════════════════════════════════
-const GRAVITY  = 0.95;
-const JUMP_V   = -16.5;
+const GRAVITY = 0.95;
+const JUMP_V = -16.5;
 const MAX_JUMPS = 2;
 const CAT_W = 110;
 const CAT_H = 110;
@@ -134,9 +109,10 @@ const cat = {
   rot:0, sx:1, sy:1,
 };
 
-// Анимация
 let blinkTimer = 0;
 let nextBlink = 90;
+let earTwitch = 0;
+let nextEarTwitch = 60;
 
 // ═══════════════════════════════════════════
 //  RESET
@@ -151,6 +127,7 @@ function resetGame() {
   cat.sliding = false; cat.slideTimer = 0;
   cat.rot = 0; cat.sx = 1; cat.sy = 1;
   blinkTimer = 0; nextBlink = 90;
+  earTwitch = 0; nextEarTwitch = 60;
   updateHUD();
 }
 
@@ -243,6 +220,12 @@ function updateHUD() {
     String(G.score).padStart(4, '0');
 }
 
+function getBlink() {
+  if (blinkTimer <= 0) return 0;
+  const p = 1 - blinkTimer / 8;
+  return Math.sin(p * Math.PI);
+}
+
 // ═══════════════════════════════════════════
 //  СПАВН
 // ═══════════════════════════════════════════
@@ -282,6 +265,15 @@ function update(dt) {
       nextBlink = 90 + Math.random() * 240;
     }
   }
+  // подёргивание уха
+  if (earTwitch > 0) earTwitch -= dt;
+  else {
+    nextEarTwitch -= dt;
+    if (nextEarTwitch <= 0) {
+      earTwitch = 12;
+      nextEarTwitch = 180 + Math.random() * 300;
+    }
+  }
 
   if (!G.started || G.dead) { updateParticles(dt); return; }
 
@@ -289,7 +281,6 @@ function update(dt) {
   G.speed = Math.min(6 + G.distance * 0.0005, 16);
   G.score = Math.floor(G.distance / 8);
 
-  // физика
   cat.vy += GRAVITY * dt;
   cat.y  += cat.vy * dt;
   if (cat.y >= groundY) {
@@ -297,16 +288,13 @@ function update(dt) {
   }
 
   const airborne = cat.y < groundY - 2;
-
-  // наклон
   const targetRot = airborne
     ? Math.max(-0.22, Math.min(0.22, cat.vy * 0.014))
     : Math.sin(G.t * 0.5) * 0.025;
   cat.rot += (targetRot - cat.rot) * 0.15 * dt;
 
-  // сквош / стретч
-  const targetSY = cat.sliding ? 0.55 : (airborne ? 1.08 : 1);
-  const targetSX = cat.sliding ? 1.25 : (airborne ? 0.94 : 1);
+  const targetSY = cat.sliding ? 0.62 : (airborne ? 1.06 : 1);
+  const targetSX = cat.sliding ? 1.20 : (airborne ? 0.95 : 1);
   cat.sy += (targetSY - cat.sy) * 0.22 * dt;
   cat.sx += (targetSX - cat.sx) * 0.22 * dt;
 
@@ -316,7 +304,6 @@ function update(dt) {
   }
   if (G.invuln > 0) G.invuln -= dt;
 
-  // спавн
   G.spawnTimer -= dt;
   if (G.spawnTimer <= 0) {
     spawnObstacle();
@@ -324,7 +311,6 @@ function update(dt) {
     G.spawnTimer = base + Math.random() * 45;
   }
 
-  // движение
   const dx = G.speed * dt;
   for (let i = G.obstacles.length - 1; i >= 0; i--) {
     const o = G.obstacles[i];
@@ -337,9 +323,8 @@ function update(dt) {
     if (it.x < -60) G.items.splice(i, 1);
   }
 
-  // хитбокс
-  const hbW = cat.sliding ? CAT_W * 0.75 : CAT_W * 0.5;
-  const hbH = cat.sliding ? CAT_H * 0.28 : CAT_H * 0.62;
+  const hbW = cat.sliding ? CAT_W * 0.70 : CAT_W * 0.48;
+  const hbH = cat.sliding ? CAT_H * 0.30 : CAT_H * 0.60;
   const hb = { x: cat.x - hbW/2, y: cat.y - hbH, w: hbW, h: hbH };
 
   if (G.invuln <= 0) {
@@ -384,7 +369,7 @@ function updateParticles(dt) {
 }
 
 // ═══════════════════════════════════════════
-//  РЕНДЕР — ФОН
+//  ФОН
 // ═══════════════════════════════════════════
 function drawBackground() {
   const grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -442,7 +427,7 @@ function drawGround() {
 }
 
 // ═══════════════════════════════════════════
-//  РЕНДЕР — ПРЕПЯТСТВИЯ
+//  ПРЕПЯТСТВИЯ
 // ═══════════════════════════════════════════
 function drawObstacle(o) {
   ctx.save();
@@ -504,7 +489,7 @@ function drawObstacle(o) {
 }
 
 // ═══════════════════════════════════════════
-//  РЕНДЕР — РЫБКА
+//  РЫБКА
 // ═══════════════════════════════════════════
 function drawFish(it) {
   ctx.save();
@@ -546,7 +531,7 @@ function drawFish(it) {
 }
 
 // ═══════════════════════════════════════════
-//  РЕНДЕР — КОТ С АНИМАЦИЕЙ
+//  ГЛАВНЫЙ РЕНДЕР КОТА
 // ═══════════════════════════════════════════
 function drawCat() {
   const cx = cat.x;
@@ -554,196 +539,357 @@ function drawCat() {
   const t  = G.t;
   const airborne = cat.y < groundY - 2;
 
-  // мигание при неуязвимости
   if (G.invuln > 0 && Math.floor(t/4) % 2 === 0) return;
 
-  // ─── тень ───
+  // Тень
   ctx.fillStyle = 'rgba(0,0,0,0.30)';
   ctx.beginPath();
   const shScale = Math.max(0.4, 1 - (groundY - by)/400);
-  ctx.ellipse(cx, groundY + 5, CAT_W*0.42*shScale, 7*shScale, 0, 0, Math.PI*2);
+  ctx.ellipse(cx, groundY + 5, CAT_W*0.40*shScale, 7*shScale, 0, 0, Math.PI*2);
   ctx.fill();
 
   ctx.save();
   ctx.translate(cx, by);
 
-  // ─── bob (покачивание при беге) ───
-  const bob = (!airborne && !cat.sliding)
-    ? Math.sin(t * 0.55) * 3
-    : 0;
+  // bob
+  const bob = (!airborne && !cat.sliding) ? Math.sin(t * 0.55) * 2.5 : 0;
   ctx.translate(0, bob);
 
   ctx.rotate(cat.rot);
   ctx.scale(cat.sx, cat.sy);
+  ctx.translate(5, 0); // центрируем относительно хитбокса
 
-  const bw = CAT_W;
-  const bh = CAT_H;
+  drawCatBody(t, airborne, cat.sliding);
 
-  // ─── 1. ХВОСТ (позади фото) ───
-  drawTail(-bw/2, -bh, bw, bh, t, airborne);
+  ctx.restore();
+}
 
-  // ─── 2. ЛАПЫ-НОСОЧКИ (за фото, только при беге) ───
-  if (!airborne && !cat.sliding) {
-    drawRunningPaws(-bw/2, -bh, bw, bh, t);
+// ─── ТЕЛО КОТА ───
+function drawCatBody(t, airborne, sliding) {
+  // Пропорции
+  const bodyTop = -78;
+  const bodyBot = -34;
+  const bodyL   = -38;
+  const bodyR   = 32;
+  const bodyCX  = (bodyL + bodyR) / 2;
+  const bodyCY  = (bodyTop + bodyBot) / 2;
+  const bodyRW  = (bodyR - bodyL) / 2;
+  const bodyRH  = (bodyBot - bodyTop) / 2;
+
+  const legPhase = t * 0.42;
+
+  // 1. Дальние лапы
+  if (airborne) {
+    drawLeg(-22, -44, -14, 0, 0, C.FUR_DARK);
+    drawLeg( 14, -44, -10, 0, 0, C.FUR_DARK);
+  } else if (sliding) {
+    drawLeg(-26, -30, -8, 0, 0, C.FUR_DARK);
+    drawLeg(  8, -30, -8, 0, 0, C.FUR_DARK);
+  } else {
+    drawLeg(-24, bodyBot, 0, legPhase, 1, C.FUR_DARK);
+    drawLeg( 12, bodyBot, 0, legPhase + Math.PI, 1, C.FUR_DARK);
   }
 
-  // ─── 3. ФОТО + ДЫХАНИЕ ───
-  const breath = 1 + Math.sin(t * 0.08) * 0.015;
+  // 2. Хвост (за телом)
+  drawTail(t, airborne, sliding);
+
+  // 3. Тело
+  ctx.fillStyle = C.FUR;
+  ctx.beginPath();
+  ctx.ellipse(bodyCX, bodyCY, bodyRW, bodyRH, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Полоски на теле
   ctx.save();
-  ctx.scale(1, breath);
-  if (imgReady) {
-    ctx.drawImage(catImg, -bw/2, -bh, bw, bh);
-  } else {
-    drawFallbackCat();
+  ctx.beginPath();
+  ctx.ellipse(bodyCX, bodyCY, bodyRW, bodyRH, 0, 0, Math.PI*2);
+  ctx.clip();
+  ctx.strokeStyle = C.FUR_DARK;
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    const sx = bodyL + 10 + i * 14;
+    ctx.beginPath();
+    ctx.moveTo(sx, bodyTop);
+    ctx.quadraticCurveTo(sx + 4, bodyCY, sx - 2, bodyBot);
+    ctx.stroke();
   }
   ctx.restore();
 
-  // ─── 4. МОРГАНИЕ ───
-  const blink = getBlink();
-  if (blink > 0.02) {
-    drawEyelids(-bw/2, -bh, bw, bh, blink);
+  // Белая грудка / живот (справа-снизу)
+  ctx.fillStyle = C.WHITE;
+  ctx.beginPath();
+  ctx.ellipse(bodyR - 6, bodyCY + 8, bodyRW * 0.44, bodyRH * 0.55, -0.15, 0, Math.PI*2);
+  ctx.fill();
+
+  // 4. Ближние лапы
+  if (airborne) {
+    drawLeg(-14, -42, -12, 0, 0, C.FUR);
+    drawLeg( 20, -42, -8, 0, 0, C.FUR);
+  } else if (sliding) {
+    drawLeg(-16, -30, -8, 0, 0, C.FUR);
+    drawLeg( 20, -30, -8, 0, 0, C.FUR);
+  } else {
+    drawLeg(-14, bodyBot, 0, legPhase + Math.PI, 0, C.FUR);
+    drawLeg( 20, bodyBot, 0, legPhase, 0, C.FUR);
+  }
+
+  // 5. Голова
+  drawHead(42, -86, 20, t);
+}
+
+// ─── ЛАПА ───
+function drawLeg(x, yTop, yBot, phase, isFar, color) {
+  const swing = Math.sin(phase) * 7;
+  const lift  = Math.max(0, Math.sin(phase)) * 4;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = isFar ? 8 : 10;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const midX = x + swing * 0.4;
+  const midY = (yTop + yBot) / 2;
+  const endX = x + swing;
+  const endY = yBot - lift;
+
+  ctx.beginPath();
+  ctx.moveTo(x, yTop);
+  ctx.lineTo(midX, midY);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // Белый носочек
+  ctx.fillStyle = C.WHITE;
+  ctx.beginPath();
+  ctx.ellipse(endX, endY, 7, 4, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Коготки (видны только если лапа в воздухе)
+  if (lift > 1) {
+    ctx.strokeStyle = C.CLAW;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let k = -1; k <= 1; k++) {
+      ctx.moveTo(endX + k * 2, endY + 1);
+      ctx.lineTo(endX + k * 2 + 1, endY + 4);
+    }
+    ctx.stroke();
   }
 
   ctx.restore();
 }
 
 // ─── ХВОСТ ───
-function drawTail(x, y, w, h, t, airborne) {
-  const rootX = x + w * RIG.tailRoot.x;
-  const rootY = y + h * RIG.tailRoot.y;
-
-  const baseAngle = airborne ? -1.15 : -0.55;
-  const segCount = 7;
-  const segLen = h * 0.09;
-  const wagSpeed = 0.28;
-  const wagAmp = 0.55;
+function drawTail(t, airborne, sliding) {
+  const rootX = -38;
+  const rootY = sliding ? -40 : -70;
+  const baseAngle = airborne ? -1.35 : (sliding ? -0.7 : -0.85);
+  const segCount = 8;
+  const segLen = 11;
+  const wagSpeed = 0.25;
+  const wagAmp = airborne ? 0.6 : 0.45;
 
   ctx.save();
-  ctx.strokeStyle = RIG.furColor;
-  ctx.lineWidth = 16;
+  ctx.strokeStyle = C.FUR;
+  ctx.lineWidth = 14;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  ctx.beginPath();
-  ctx.moveTo(rootX, rootY);
-
+  const points = [[rootX, rootY]];
   let px = rootX, py = rootY;
+
+  ctx.beginPath();
+  ctx.moveTo(px, py);
   for (let i = 1; i <= segCount; i++) {
     const seg = i / segCount;
     const a = baseAngle
-      + Math.sin(t * wagSpeed - seg * 1.6) * wagAmp * seg;
+      + Math.sin(t * wagSpeed - seg * 1.5) * wagAmp * seg;
     const nx = px + Math.cos(a) * segLen;
     const ny = py + Math.sin(a) * segLen;
     ctx.lineTo(nx, ny);
     px = nx; py = ny;
+    points.push([px, py]);
   }
   ctx.stroke();
 
-  // белый кончик
-  ctx.fillStyle = '#ffffff';
+  // Тёмные кольца
+  ctx.strokeStyle = C.FUR_DARK;
+  ctx.lineWidth = 3.5;
+  for (let i = 2; i < points.length - 1; i += 2) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[i + 1] || points[i];
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const px2 = x1 + Math.cos(a + Math.PI/2) * 6;
+    const py2 = y1 + Math.sin(a + Math.PI/2) * 6;
+    const px3 = x1 - Math.cos(a + Math.PI/2) * 6;
+    const py3 = y1 - Math.sin(a + Math.PI/2) * 6;
+    ctx.beginPath();
+    ctx.moveTo(px2, py2);
+    ctx.lineTo(px3, py3);
+    ctx.stroke();
+  }
+
+  // Белый кончик
+  const [endX, endY] = points[points.length - 1];
+  ctx.fillStyle = C.WHITE;
   ctx.beginPath();
-  ctx.arc(px, py, 7, 0, Math.PI*2);
+  ctx.arc(endX, endY, 8, 0, Math.PI*2);
   ctx.fill();
 
   ctx.restore();
 }
 
-// ─── ЛАПЫ ───
-function drawRunningPaws(x, y, w, h, t) {
-  const speed = 0.55;
-  const phase = t * speed;
-  const pawY = y + h * 0.94;
-
-  for (let i = 0; i < 2; i++) {
-    const off = i * Math.PI;
-    const dx = (i === 0 ? -0.16 : 0.16) * w;
-    const lift = Math.max(0, Math.sin(phase + off)) * h * 0.05;
-    const px = x + w/2 + dx;
-    const py = pawY - lift;
-
-    ctx.save();
-    ctx.fillStyle = RIG.pawColor;
-    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
-    ctx.lineWidth = 1;
-
-    ctx.beginPath();
-    ctx.ellipse(px, py, w*0.09, h*0.04, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-
-    // пальчики
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    for (let k = -1; k <= 1; k++) {
-      ctx.beginPath();
-      ctx.moveTo(px + k*w*0.028, py - h*0.03);
-      ctx.lineTo(px + k*w*0.028, py + h*0.02);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-}
-
-// ─── ВЕКИ ───
-function drawEyelids(x, y, w, h, amount) {
-  const lx = x + w * RIG.eyeL.x;
-  const ly = y + h * RIG.eyeL.y;
-  const rx = x + w * RIG.eyeR.x;
-  const ry = y + h * RIG.eyeR.y;
-  const rw = w * RIG.eyeL.r;
-  const rh = h * RIG.eyeL.r * amount;
+// ─── ГОЛОВА ───
+function drawHead(cx, cy, r, t) {
+  // подёргивание уха
+  const twitch = earTwitch > 0
+    ? Math.sin((1 - earTwitch/12) * Math.PI * 3) * 0.12
+    : 0;
+  const headBob = Math.sin(t * 0.55) * 1.2;
 
   ctx.save();
-  ctx.fillStyle = RIG.furColor;
-  ctx.shadowColor = RIG.furColor;
-  ctx.shadowBlur = 6;
+  ctx.translate(0, headBob);
 
+  // ─── УШИ ───
+  // левое
+  ctx.save();
+  ctx.translate(cx - 12, cy - 18);
+  ctx.rotate(twitch * 0.8);
+  ctx.translate(-(cx - 12), -(cy - 18));
+  ctx.fillStyle = C.FUR;
   ctx.beginPath();
-  ctx.ellipse(lx, ly, rw, rh, 0, 0, Math.PI*2);
+  ctx.moveTo(cx - 17, cy - 6);
+  ctx.lineTo(cx - 15, cy - 32);
+  ctx.lineTo(cx - 1, cy - 14);
+  ctx.closePath();
   ctx.fill();
-
+  ctx.fillStyle = C.EAR_PINK;
   ctx.beginPath();
-  ctx.ellipse(rx, ry, rw, rh, 0, 0, Math.PI*2);
+  ctx.moveTo(cx - 14, cy - 11);
+  ctx.lineTo(cx - 13, cy - 27);
+  ctx.lineTo(cx - 4, cy - 14);
+  ctx.closePath();
   ctx.fill();
-
   ctx.restore();
-}
 
-function getBlink() {
-  if (blinkTimer <= 0) return 0;
-  const p = 1 - blinkTimer / 8;
-  return Math.sin(p * Math.PI);
-}
+  // правое (подёргивается сильнее)
+  ctx.save();
+  ctx.translate(cx + 10, cy - 18);
+  ctx.rotate(twitch);
+  ctx.translate(-(cx + 10), -(cy - 18));
+  ctx.fillStyle = C.FUR;
+  ctx.beginPath();
+  ctx.moveTo(cx + 3, cy - 14);
+  ctx.lineTo(cx + 14, cy - 32);
+  ctx.lineTo(cx + 17, cy - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = C.EAR_PINK;
+  ctx.beginPath();
+  ctx.moveTo(cx + 6, cy - 13);
+  ctx.lineTo(cx + 13, cy - 27);
+  ctx.lineTo(cx + 14, cy - 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 
-// ─── fallback (если фото не загрузилось) ───
-function drawFallbackCat() {
-  const bw = CAT_W * 0.55, bh = CAT_H * 0.42;
-  const topY = -CAT_H + (CAT_H - bh) * 0.5;
+  // ─── ГОЛОВА ───
+  ctx.fillStyle = C.FUR;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.fill();
 
-  ctx.fillStyle = '#a89a78';
-  roundRect(ctx, -bw/2, topY, bw, bh, 14); ctx.fill();
+  // Полоски на лбу
+  ctx.strokeStyle = C.FUR_DARK;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - 6, cy - r + 4); ctx.lineTo(cx - 6, cy - r + 12);
+  ctx.moveTo(cx,     cy - r + 2); ctx.lineTo(cx,     cy - r + 12);
+  ctx.moveTo(cx + 6, cy - r + 4); ctx.lineTo(cx + 6, cy - r + 12);
+  ctx.stroke();
 
-  ctx.strokeStyle = '#6e6144'; ctx.lineWidth = 3;
-  for (let i = 0; i < 3; i++) {
-    const sx = -bw/2 + 12 + i*11;
+  // Белая мордашка
+  ctx.fillStyle = C.WHITE;
+  ctx.beginPath();
+  ctx.ellipse(cx + 2, cy + 8, 13, 9, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // ─── ГЛАЗА ───
+  const blinkAmt = getBlink();
+  const eyeY = cy - 2;
+  const eyeLX = cx - 7;
+  const eyeRX = cx + 7;
+  const eyeR = 6;
+
+  if (blinkAmt > 0.3) {
+    ctx.strokeStyle = C.EYE_DARK;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(sx, topY+5);
-    ctx.lineTo(sx+3, topY+bh-5);
+    ctx.moveTo(eyeLX - 5, eyeY); ctx.lineTo(eyeLX + 5, eyeY);
+    ctx.moveTo(eyeRX - 5, eyeY); ctx.lineTo(eyeRX + 5, eyeY);
     ctx.stroke();
+  } else {
+    // Радужка
+    ctx.fillStyle = C.EYE;
+    ctx.beginPath();
+    ctx.arc(eyeLX, eyeY, eyeR, 0, Math.PI*2);
+    ctx.arc(eyeRX, eyeY, eyeR, 0, Math.PI*2);
+    ctx.fill();
+
+    // Зрачок (сужается при моргании)
+    ctx.fillStyle = C.EYE_DARK;
+    const pupilH = eyeR * 1.7 * (1 - blinkAmt * 0.7);
+    ctx.beginPath();
+    ctx.ellipse(eyeLX, eyeY, eyeR * 0.55, pupilH / 2, 0, 0, Math.PI*2);
+    ctx.ellipse(eyeRX, eyeY, eyeR * 0.55, pupilH / 2, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Блики
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(eyeLX - 2, eyeY - 2.5, 1.8, 0, Math.PI*2);
+    ctx.arc(eyeRX - 2, eyeY - 2.5, 1.8, 0, Math.PI*2);
+    ctx.fill();
   }
 
-  ctx.fillStyle = '#ffffff';
+  // ─── НОС ───
+  ctx.fillStyle = C.PINK;
   ctx.beginPath();
-  ctx.ellipse(bw/2-14, topY + bh*0.55, 11, bh*0.42, 0, 0, Math.PI*2);
+  ctx.moveTo(cx + 2, cy + 5);
+  ctx.lineTo(cx + 7, cy + 5);
+  ctx.lineTo(cx + 4.5, cy + 8);
+  ctx.closePath();
   ctx.fill();
 
-  const hy = topY - 6;
-  ctx.fillStyle = '#a89a78';
-  ctx.beginPath(); ctx.arc(0, hy, 16, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#2b2b1e';
+  // ─── РОТ ───
+  ctx.strokeStyle = C.EYE_DARK;
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.arc(-5, hy-2, 3.5, 0, Math.PI*2);
-  ctx.arc( 5, hy-2, 3.5, 0, Math.PI*2);
-  ctx.fill();
+  ctx.moveTo(cx + 4.5, cy + 8);
+  ctx.lineTo(cx + 4.5, cy + 10);
+  ctx.quadraticCurveTo(cx + 1, cy + 12, cx - 1, cy + 10);
+  ctx.moveTo(cx + 4.5, cy + 10);
+  ctx.quadraticCurveTo(cx + 8, cy + 12, cx + 10, cy + 10);
+  ctx.stroke();
+
+  // ─── УСЫ ───
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  // слева
+  ctx.moveTo(cx - 10, cy + 6); ctx.lineTo(cx - 26, cy + 2);
+  ctx.moveTo(cx - 10, cy + 8); ctx.lineTo(cx - 26, cy + 10);
+  // справа
+  ctx.moveTo(cx + 14, cy + 6); ctx.lineTo(cx + 30, cy + 2);
+  ctx.moveTo(cx + 14, cy + 8); ctx.lineTo(cx + 30, cy + 10);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 // ═══════════════════════════════════════════
@@ -761,39 +907,112 @@ function drawParticles() {
 }
 
 // ═══════════════════════════════════════════
+//  АВАТАРКА В HUD (рисуем кота один раз)
+// ═══════════════════════════════════════════
+function drawAvatar() {
+  const av = document.getElementById('avatar');
+  const c = av.getContext('2d');
+  c.setTransform(2, 0, 0, 2, 0, 0); // retina
+
+  c.fillStyle = '#3a2a45';
+  c.fillRect(0, 0, 52, 52);
+
+  // морда кота крупным планом
+  c.save();
+  c.translate(26, 30);
+  c.scale(0.95, 0.95);
+
+  // уши
+  c.fillStyle = C.FUR;
+  c.beginPath();
+  c.moveTo(-12, -8); c.lineTo(-11, -26); c.lineTo(0, -12); c.closePath(); c.fill();
+  c.beginPath();
+  c.moveTo(4, -12); c.lineTo(13, -26); c.lineTo(14, -8); c.closePath(); c.fill();
+  c.fillStyle = C.EAR_PINK;
+  c.beginPath();
+  c.moveTo(-10, -12); c.lineTo(-9, -22); c.lineTo(-2, -13); c.closePath(); c.fill();
+  c.beginPath();
+  c.moveTo(6, -13); c.lineTo(12, -22); c.lineTo(12, -12); c.closePath(); c.fill();
+
+  // голова
+  c.fillStyle = C.FUR;
+  c.beginPath(); c.arc(0, 0, 15, 0, Math.PI*2); c.fill();
+
+  // полоски
+  c.strokeStyle = C.FUR_DARK; c.lineWidth = 2.5; c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(-5, -14); c.lineTo(-5, -7);
+  c.moveTo(0, -15); c.lineTo(0, -7);
+  c.moveTo(5, -14); c.lineTo(5, -7);
+  c.stroke();
+
+  // мордашка
+  c.fillStyle = C.WHITE;
+  c.beginPath(); c.ellipse(0, 7, 10, 7, 0, 0, Math.PI*2); c.fill();
+
+  // глаза
+  c.fillStyle = C.EYE;
+  c.beginPath();
+  c.arc(-5, -1, 4, 0, Math.PI*2);
+  c.arc(5, -1, 4, 0, Math.PI*2);
+  c.fill();
+  c.fillStyle = C.EYE_DARK;
+  c.beginPath();
+  c.ellipse(-5, -1, 2.2, 3.4, 0, 0, Math.PI*2);
+  c.ellipse(5, -1, 2.2, 3.4, 0, 0, Math.PI*2);
+  c.fill();
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(-6, -2.5, 1.3, 0, Math.PI*2);
+  c.arc(4, -2.5, 1.3, 0, Math.PI*2);
+  c.fill();
+
+  // нос
+  c.fillStyle = C.PINK;
+  c.beginPath();
+  c.moveTo(-1, 4); c.lineTo(3, 4); c.lineTo(1, 6.5); c.closePath(); c.fill();
+
+  c.restore();
+}
+
+// ═══════════════════════════════════════════
 //  ЭКРАНЫ
 // ═══════════════════════════════════════════
+function drawCatPreview(cx, cy, scale, t) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.translate(5, 0);
+  drawCatBody(t, false, false);
+  ctx.restore();
+}
+
 function drawStartScreen() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, 0, W, H);
 
-  if (imgReady) {
-    const s = Math.min(W * 0.45, 220);
-    ctx.save();
-    ctx.translate(W/2, H * 0.22);
-    ctx.rotate(Math.sin(G.t * 0.04) * 0.03);
-    ctx.drawImage(catImg, -s/2, -s/2, s, s);
-    ctx.restore();
-  }
+  // Кот-превью сверху
+  const scale = Math.min(W / 380, 1.4);
+  drawCatPreview(W/2, H * 0.32 + 40 * scale, scale, G.t);
 
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 40px -apple-system, sans-serif';
-  ctx.fillText('КАПТЕР', W/2, H * 0.42);
+  ctx.fillText('КАПТЕР', W/2, H * 0.45);
 
   ctx.font = 'bold 24px -apple-system, sans-serif';
   ctx.fillStyle = '#ffb37a';
-  ctx.fillText('9 ЖИЗНЕЙ', W/2, H * 0.475);
+  ctx.fillText('9 ЖИЗНЕЙ', W/2, H * 0.5);
 
   ctx.font = '16px -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText('ТАП — прыжок / двойной прыжок', W/2, H * 0.56);
-  ctx.fillText('СВАЙП ВНИЗ — подкат', W/2, H * 0.60);
-  ctx.fillText('Собирай 🐟, уворачивайся!', W/2, H * 0.645);
+  ctx.fillText('ТАП — прыжок / двойной прыжок', W/2, H * 0.58);
+  ctx.fillText('СВАЙП ВНИЗ — подкат', W/2, H * 0.62);
+  ctx.fillText('Собирай 🐟, уворачивайся!', W/2, H * 0.665);
 
   const pulse = 1 + Math.sin(G.t * 0.1) * 0.05;
   ctx.save();
-  ctx.translate(W/2, H * 0.78);
+  ctx.translate(W/2, H * 0.80);
   ctx.scale(pulse, pulse);
   ctx.fillStyle = '#ffb37a';
   roundRect(ctx, -110, -28, 220, 56, 28); ctx.fill();
@@ -808,35 +1027,29 @@ function drawGameOver() {
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(0, 0, W, H);
 
-  if (imgReady) {
-    const s = Math.min(W * 0.35, 160);
-    ctx.save();
-    ctx.translate(W/2, H * 0.24);
-    ctx.rotate(-0.06);
-    ctx.drawImage(catImg, -s/2, -s/2, s, s);
-    ctx.restore();
-  }
+  const scale = Math.min(W / 500, 1.0);
+  drawCatPreview(W/2, H * 0.28 + 40 * scale, scale, G.t);
 
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ff5a5a';
-  ctx.font = 'bold 36px -apple-system, sans-serif';
-  ctx.fillText('КАПТЕР УСТАЛ', W/2, H * 0.40);
+  ctx.font = 'bold 34px -apple-system, sans-serif';
+  ctx.fillText('КАПТЕР УСТАЛ', W/2, H * 0.42);
 
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 18px -apple-system, sans-serif';
-  ctx.fillText('Все 9 жизней истрачены', W/2, H * 0.455);
+  ctx.fillText('Все 9 жизней истрачены', W/2, H * 0.475);
 
   ctx.fillStyle = '#ffb37a';
   ctx.font = 'bold 34px -apple-system, sans-serif';
-  ctx.fillText(String(G.score), W/2, H * 0.545);
+  ctx.fillText(String(G.score), W/2, H * 0.56);
 
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '14px -apple-system, sans-serif';
-  ctx.fillText('ОЧКОВ', W/2, H * 0.585);
+  ctx.fillText('ОЧКОВ', W/2, H * 0.60);
 
   const pulse = 1 + Math.sin(G.t * 0.12) * 0.05;
   ctx.save();
-  ctx.translate(W/2, H * 0.75);
+  ctx.translate(W/2, H * 0.78);
   ctx.scale(pulse, pulse);
   ctx.fillStyle = '#ffb37a';
   roundRect(ctx, -110, -28, 220, 56, 28); ctx.fill();
@@ -876,7 +1089,6 @@ function render() {
 //  ЦИКЛ
 // ═══════════════════════════════════════════
 let lastT = performance.now();
-
 function loop(now) {
   const dt = Math.min((now - lastT) / 16.667, 2.5);
   lastT = now;
@@ -888,6 +1100,7 @@ function loop(now) {
 cat.x = Math.max(100, W * 0.22);
 cat.y = groundY;
 updateHUD();
+drawAvatar();
 requestAnimationFrame(loop);
 
 })();
